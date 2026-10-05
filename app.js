@@ -246,7 +246,7 @@ function viewHome() {
     action = `<button class="btn block" id="go">${st.heeft_vraag ? 'Ga verder met je vraag' : (st.klaar > 0 ? 'Ga verder' : 'Start hoofdstuk ' + h)}</button>`;
   }
   render(header() + nav('spelen') + meBox() + `<ul class="chapters">${items}</ul>` + action +
-    `<p class="small-note" style="margin-top:16px">Je hebt ${LIMIT} seconden per vraag. Goed in één keer geeft 10 punten. Daarna 5, 3, 2 en 1 punt. De competitie eindigt op ${esc(fmtDay(st.eind_datum))}. Speel je zeven dagen niet, dan vervalt je score.</p>
+    `<p class="small-note" style="margin-top:16px">Je hebt 30 seconden per vraag. Goed in één keer geeft 10 punten. Daarna 5, 3, 2 en 1 punt. De competitie eindigt op ${esc(fmtDay(st.eind_datum))}. Speel je zeven dagen niet, dan vervalt je score.</p>
      <button class="btn ghost small" id="out" type="button">Uitloggen</button>`);
   bindNav();
   const go = $('#go'); if (go) go.onclick = () => play();

@@ -7,6 +7,9 @@ function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function header(extra) {
   return `<header class="top"><div class="brand">Docentenpagina</div><div class="sub">Oefenspellen Tweede Wereldoorlog en Kamer en Kabinet</div></header>${extra || ''}`;
 }
+function openReveal(id) {
+  window.open('/reveal?klas=' + encodeURIComponent(id), '_blank');
+}
 function today() {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -60,7 +63,7 @@ function viewClasses(r) {
   const rows = r.klassen.map(k => `<tr>
     <td><b>${esc(k.naam)}</b></td><td><span class="pill ${k.vak === 'politiek' ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></td><td>${k.actief} van ${k.aantal} gestart</td>
     <td>${esc(fmtDay(k.eind_datum))}${k.afgelopen ? ' (afgelopen)' : ''}</td>
-    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button></td></tr>`).join('');
+    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button> <button class="btn small ghost" data-reveal="${esc(k.id)}">Onthul stand</button></td></tr>`).join('');
   render(header() + `
     <div class="row" style="margin-bottom:12px"><div><button class="btn ghost small" id="out">Uitloggen</button></div></div>
     <h2>Mijn klassen</h2>
@@ -82,6 +85,7 @@ function viewClasses(r) {
     <button class="btn ghost" type="submit">Wijzigen</button><p class="msg" id="pmsg" role="alert"></p></form>`);
   $('#out').onclick = logout;
   app.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openClass(b.dataset.open));
+  app.querySelectorAll('[data-reveal]').forEach(b => b.onclick = () => openReveal(b.dataset.reveal));
   $('#nf').onsubmit = async e => {
     e.preventDefault();
     const b = $('#nf .btn'); b.disabled = true;
@@ -152,6 +156,7 @@ async function openClass(id) {
     <div class="row" style="margin-bottom:6px">
       <div><button class="btn ghost small" id="back">Alle klassen</button></div>
       <div><button class="btn ghost small" id="refresh">Vernieuwen</button></div>
+      <div><button class="btn small" id="reveal">Onthul de tussenstand</button></div>
     </div>
     <h2>Klas ${esc(k.naam)} <span class="pill ${pol ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></h2>
     ${pol ? `<h2>Rondes openzetten</h2>
@@ -185,6 +190,7 @@ async function openClass(id) {
     $('#allopen').onclick = () => saveStages([1, 2, 3, 4]);
   }
   $('#refresh').onclick = () => openClass(id);
+  $('#reveal').onclick = () => openReveal(id);
   app.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
     if (!confirm('Pincode van de ' + b.dataset.dier + ' resetten? De score blijft staan. De student maakt een nieuwe pincode met dezelfde code.')) return;
     const res = await rpc('teacher_reset_pin', { p_password: pw, p_player_id: b.dataset.reset });
