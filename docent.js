@@ -63,7 +63,7 @@ function viewClasses(r) {
   const rows = r.klassen.map(k => `<tr>
     <td><b>${esc(k.naam)}</b></td><td><span class="pill ${k.vak === 'politiek' ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></td><td>${k.actief} van ${k.aantal} gestart</td>
     <td>${esc(fmtDay(k.eind_datum))}${k.afgelopen ? ' (afgelopen)' : ''}</td>
-    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button> <button class="btn small ghost" data-reveal="${esc(k.id)}">Onthul stand</button></td></tr>`).join('');
+    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button> <button class="btn small ghost" data-reveal="${esc(k.id)}">Onthul stand</button> <button class="btn small danger" data-del="${esc(k.id)}" data-naam="${esc(k.naam)}">Verwijderen</button></td></tr>`).join('');
   render(header() + `
     <div class="row" style="margin-bottom:12px"><div><button class="btn ghost small" id="out">Uitloggen</button></div></div>
     <h2>Mijn klassen</h2>
@@ -86,6 +86,12 @@ function viewClasses(r) {
   $('#out').onclick = logout;
   app.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openClass(b.dataset.open));
   app.querySelectorAll('[data-reveal]').forEach(b => b.onclick = () => openReveal(b.dataset.reveal));
+  app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Klas ' + b.dataset.naam + ' met alle codes en scores definitief verwijderen? Dit kan niet ongedaan worden gemaakt.')) return;
+    const res = await rpc('teacher_delete_class', { p_password: pw, p_class_id: b.dataset.del });
+    if (res.error) { alert(errText(res.error)); return; }
+    loadClasses();
+  });
   $('#nf').onsubmit = async e => {
     e.preventDefault();
     const b = $('#nf .btn'); b.disabled = true;
@@ -127,7 +133,7 @@ function viewCodes(res) {
   $('#open').onclick = () => openClass(res.klas_id);
 }
 
-async function openClass(id) {
+async function openClass(id, flash) {
   render(header() + '<p>Laden...</p>');
   const r = await rpc('teacher_overview', { p_password: pw, p_class_id: id });
   if (r.error) {
@@ -174,6 +180,9 @@ async function openClass(id) {
     <h2>Einddatum wijzigen</h2>
     <form class="card" id="ef"><div class="row"><div><label for="ed">Nieuwe einddatum</label><input id="ed" type="date" max="${addDays(t, 45)}" value="${esc(k.eind_datum)}"></div></div>
     <button class="btn ghost" type="submit">Opslaan</button></form>
+    <h2>Klas resetten</h2>
+    <p class="small-note">Wist alle scores en alle voortgang van deze klas. De codes en pincodes blijven bestaan, dus studenten loggen gewoon weer in en beginnen opnieuw.</p>
+    <button class="btn ghost" id="resetclass">Reset scores en voortgang</button>
     <h2>Klas verwijderen</h2>
     <button class="btn danger" id="del">Verwijder deze klas en alle scores</button>`);
   $('#back').onclick = loadClasses;
@@ -202,6 +211,14 @@ async function openClass(id) {
     const res = await rpc('teacher_set_end_date', { p_password: pw, p_class_id: id, p_end_date: $('#ed').value || null });
     if (res.error) { $('#msg').textContent = errText(res.error); return; }
     openClass(id);
+  };
+  if (flash) $('#msg').innerHTML = '<span class="ok">' + esc(flash) + '</span>';
+  $('#resetclass').onclick = async () => {
+    if (!confirm('Alle scores en voortgang van klas ' + k.naam + ' wissen? Dit kan niet ongedaan worden gemaakt. Codes en pincodes blijven bestaan.')) return;
+    const close = pol ? confirm('Ook alle rondes weer sluiten?\n\nOK = ja, sluit alle rondes.\nAnnuleren = nee, laat de rondes open staan.') : false;
+    const res = await rpc('teacher_reset_class', { p_password: pw, p_class_id: id, p_close_stages: close });
+    if (res.error) { $('#msg').textContent = errText(res.error); return; }
+    openClass(id, 'De klas is gereset. ' + res.spelers + ' studenten beginnen opnieuw met 0 punten.');
   };
   $('#del').onclick = async () => {
     if (!confirm('Klas ' + k.naam + ' en alle scores definitief verwijderen?')) return;

@@ -234,3 +234,8 @@ li.rv-row.p2, li.rv-row.p3 { border-color: rgba(255,255,255,.55); }
 canvas#confetti { position: fixed; inset: 0; pointer-events: none; width: 100vw; height: 100vh; }
 .rv-hint { flex: none; min-height: 4vh; margin-top: .8vh; text-align: right; font-size: 1.8vh; color: rgba(255,255,255,.45); }
 .rv-hint .btn { padding: .6vh 2vh; font-size: 2vh; }
+
+/* Docentpagina en onthulpagina: witte tekst op magenta knoppen */
+body.docent .btn:not(.ghost):not(.danger), body.reveal .btn:not(.ghost) { background: #e000cc; color: #fff; }
+body.docent .btn:not(.ghost):not(.danger):hover, body.reveal .btn:not(.ghost):hover { background: #bf00ae; }
+body.docent .btn:disabled { opacity: .5; }
