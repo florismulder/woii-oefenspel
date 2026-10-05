@@ -20,6 +20,7 @@ function addDays(iso, n) {
 }
 const VAK = { woii: 'Tweede Wereldoorlog', politiek: 'Kamer en Kabinet' };
 const RONDE_NAMEN = ['Ronde 1: Stelsel en Tweede Kamer', 'Ronde 2: Verkiezingen en Eerste Kamer', 'Ronde 3: Kabinet en wet', 'Finale'];
+function fmtTijd(ms) { return (Math.round((ms || 0) / 100) / 10).toString().replace('.', ',') + ' s'; }
 const STATUS = { actief: 'Actief', nog_niet_gestart: 'Nog niet gestart', pincode_gereset: 'Pincode gereset' };
 
 function logout() {
@@ -154,6 +155,7 @@ async function openClass(id, flash) {
     <td><span class="pill ${esc(p.status)}">${esc(STATUS[p.status] || p.status)}</span></td>
     <td>${pol ? esc(voortg(p)) : (p.status === 'actief' ? (p.hoofdstuk > 5 ? 'klaar' : (p.hoofdstuk === 5 ? 'finale' : p.hoofdstuk)) : '')}</td>
     <td><b>${p.score}</b></td>
+    <td>${p.status === 'actief' ? fmtTijd(p.tijd_ms) : ''}</td>
     <td>${p.laatst_gespeeld ? esc(fmtDate(p.laatst_gespeeld)) : ''}</td>
     <td>${p.vervalt_op && p.status === 'actief' ? esc(fmtDate(p.vervalt_op)) : ''}</td>
     <td>${p.reset_mogelijk ? `<button class="btn small ghost" data-reset="${esc(p.id)}" data-dier="${esc(p.dier)}">Reset pincode</button>` : ''}</td></tr>`).join('');
@@ -163,7 +165,9 @@ async function openClass(id, flash) {
       <div><button class="btn ghost small" id="back">Alle klassen</button></div>
       <div><button class="btn ghost small" id="refresh">Vernieuwen</button></div>
       <div><button class="btn small" id="reveal">Onthul de tussenstand</button></div>
+      <div><button class="btn small ghost" id="board">${k.bord_zichtbaar ? 'Verberg de ranglijst voor studenten' : 'Toon de ranglijst aan studenten'}</button></div>
     </div>
+    <p class="small-note">Studenten zien nu ${k.bord_zichtbaar ? 'de ranglijst en hun plek' : 'alleen hun eigen punten'}. Na afloop van Onthul stand wordt de ranglijst zichtbaar. Bij gelijke punten telt de totale tijd van goede antwoorden.</p>
     <h2>Klas ${esc(k.naam)} <span class="pill ${pol ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></h2>
     ${pol ? `<h2>Rondes openzetten</h2>
     <form class="card" id="rf"><p>Zet een ronde open als je wilt dat studenten hem kunnen spelen. Een ronde die je sluit blijft bewaard met alle punten.</p>
@@ -174,7 +178,7 @@ async function openClass(id, flash) {
     <button class="btn" type="submit">Opslaan</button> <button class="btn ghost" type="button" id="allopen">Alles open</button>
     <p class="msg" id="rmsg" role="alert"></p></form>` : ''}
     <p>Einddatum: <b>${esc(fmtDay(k.eind_datum))}</b>${k.afgelopen ? ' (afgelopen)' : ''}. De klas wordt automatisch gewist op ${esc(fmtDate(k.wordt_gewist_op))}.</p>
-    <div class="table-scroll"><table class="docent"><thead><tr><th>Dier</th><th>Code</th><th>Status</th><th>${pol ? 'Ronde 1 · 2 · 3 · finale' : 'Hoofdstuk'}</th><th>Score</th><th>Laatst gespeeld</th><th>Score vervalt</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="table-scroll"><table class="docent"><thead><tr><th>Dier</th><th>Code</th><th>Status</th><th>${pol ? 'Ronde 1 · 2 · 3 · finale' : 'Hoofdstuk'}</th><th>Score</th><th>Tijd</th><th>Laatst gespeeld</th><th>Score vervalt</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="small-note">Reset van een pincode kan alleen binnen zeven dagen na het laatste spel. Daarna vervalt de score en komt het dier weer vrij voor een nieuwe start.</p>
     <p class="msg" id="msg" role="alert"></p>
     <h2>Einddatum wijzigen</h2>
@@ -200,6 +204,11 @@ async function openClass(id, flash) {
   }
   $('#refresh').onclick = () => openClass(id);
   $('#reveal').onclick = () => openReveal(id);
+  $('#board').onclick = async () => {
+    const res = await rpc('teacher_set_board', { p_password: pw, p_class_id: id, p_visible: !k.bord_zichtbaar });
+    if (res.error) { $('#msg').textContent = errText(res.error); return; }
+    openClass(id);
+  };
   app.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
     if (!confirm('Pincode van de ' + b.dataset.dier + ' resetten? De score blijft staan. De student maakt een nieuwe pincode met dezelfde code.')) return;
     const res = await rpc('teacher_reset_pin', { p_password: pw, p_player_id: b.dataset.reset });

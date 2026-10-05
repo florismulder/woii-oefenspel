@@ -187,7 +187,7 @@ function bindNav() {
 function meBox() {
   return `<div class="me"><div class="avatar" aria-hidden="true">${emoji(st.dier)}</div>
     <div><div class="name">${esc(st.dier)}</div>
-    <div class="stats"><b>${st.score}</b> punten · plek <b>${st.plek}</b></div></div></div>`;
+    <div class="stats"><b>${st.score}</b> punten${st.bord && st.plek ? ' · plek <b>' + st.plek + '</b>' : ''}</div></div></div>`;
 }
 
 function viewHomePolitiek() {
@@ -212,7 +212,7 @@ function viewHomePolitiek() {
     return `<li class="${cls}${n === 4 ? ' finale' : ''}"><div class="t">${esc(info.t)}</div><div class="s">${esc(info.s)}</div><div class="s"><b>${esc(status)}</b></div>${extra}${btn}</li>`;
   }).join('');
   let banner = '';
-  if (st.afgelopen) banner = '<div class="banner">De competitie is afgelopen. Bekijk de eindstand bij Ranglijst.</div>';
+  if (st.afgelopen) banner = '<div class="banner">De competitie is afgelopen. Bekijk de stand bij Ranglijst als je docent die heeft onthuld.</div>';
   else if (st.heeft_vraag) banner = '<div class="banner">Je hebt nog een vraag open staan. Ga verder in de ronde waar je mee bezig was.</div>';
   render(header() + nav('spelen') + meBox() + banner + `<ul class="chapters">${items}</ul>` +
     `<p class="small-note" style="margin-top:16px">Je hebt 30 seconden per vraag, in de finale 20 seconden. Goed in één keer geeft 10 punten. Daarna 5, 3 en 2 punten. In de finale telt alles dubbel. Een foute vraag komt later terug, soms in een andere vorm. De competitie eindigt op ${esc(fmtDay(st.eind_datum))}. Speel je zeven dagen niet, dan vervalt je score.</p>
@@ -239,7 +239,7 @@ function viewHome() {
   }).join('');
   let action = '';
   if (st.afgelopen) {
-    action = `<div class="banner">De competitie is afgelopen. Bekijk de eindstand bij Ranglijst.</div>`;
+    action = `<div class="banner">De competitie is afgelopen. Bekijk de stand bij Ranglijst als je docent die heeft onthuld.</div>`;
   } else if (h > 5) {
     action = `<div class="banner">Je hebt alle hoofdstukken en de finale afgerond. Goed gedaan!</div>`;
   } else {
@@ -384,6 +384,15 @@ async function drawLeaderboard(quiet) {
   if (r.error) {
     if (r.error === 'sessie_verlopen') { token = null; store.del('woii_token'); viewLogin(errText(r.error)); return; }
     if (!quiet) viewMessage(errText(r.error));
+    return;
+  }
+  if (r.verborgen) {
+    render(header() + nav('ranglijst') + `
+    <h1>Ranglijst</h1>
+    <div class="banner">De ranglijst is nog verborgen. Je docent onthult de stand in de les.</div>
+    <p class="small-note">Ondertussen telt elk goed antwoord. Een snel antwoord helpt bij gelijke punten.</p>`);
+    bindNav();
+    if (!r.afgelopen) lbTimer = setInterval(() => { drawLeaderboard(true); }, 15000);
     return;
   }
   const rows = r.rijen.map(x => `<tr class="${x.ik ? 'ik' : ''}"><td class="num">${x.plek}</td>

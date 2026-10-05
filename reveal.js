@@ -25,6 +25,7 @@ function beep(freq, dur, type, gain) {
 }
 
 /* ---------- Hulpfuncties ---------- */
+function fmtTijd(ms) { return (Math.round((ms || 0) / 100) / 10).toString().replace('.', ',') + ' s'; }
 function wait(ms) {
   return new Promise(res => {
     const t = setTimeout(() => { skip = null; res(); }, ms);
@@ -75,7 +76,7 @@ async function loadKlas() {
 /* ---------- Startscherm ---------- */
 function viewStart() {
   app.innerHTML = head() + `<div class="rv-center"><h2>Klaar voor de onthulling?</h2>
-    <p>De stand wordt pas getoond als de klok is afgelopen. Van de laatste plek tot de winnaar.</p>
+    <p>De stand wordt pas getoond als de klok is afgelopen. Van de laatste plek tot de winnaar. Bij gelijke punten telt de snelste totale antwoordtijd. Na afloop zien studenten de ranglijst ook op hun eigen scherm.</p>
     <div class="rv-controls">
       <label for="secs" style="font-size:2.2vh;margin:0;font-weight:400">Aftellen vanaf</label>
       <select id="secs"><option value="5">5 seconden</option><option value="10" selected>10 seconden</option><option value="20">20 seconden</option><option value="30">30 seconden</option></select>
@@ -100,17 +101,22 @@ async function run(secs) {
   if (r.error) { if (r.error === 'verkeerd_wachtwoord') { viewLogin(errText(r.error)); } else { message(errText(r.error)); } return; }
   klas = r.klas;
   const rows = r.spelers.filter(p => p.status === 'actief')
-    .sort((a, b) => b.score - a.score || a.dier.localeCompare(b.dier, 'nl'));
+    .sort((a, b) => b.score - a.score || (a.tijd_ms || 0) - (b.tijd_ms || 0) || a.dier.localeCompare(b.dier, 'nl'));
   if (!rows.length) { message('Er staan nog geen spelers in de lijst.'); return; }
-  let plek = 0, prev = null;
-  rows.forEach((p, i) => { if (p.score !== prev) { plek = i + 1; prev = p.score; } p.plek = plek; });
+  let plek = 0, prevS = null, prevT = null;
+  rows.forEach((p, i) => {
+    if (p.score !== prevS || (p.tijd_ms || 0) !== prevT) { plek = i + 1; prevS = p.score; prevT = p.tijd_ms || 0; }
+    p.plek = plek;
+    const buur = (rows[i - 1] && rows[i - 1].score === p.score) || (rows[i + 1] && rows[i + 1].score === p.score);
+    p.toonTijd = !!buur;
+  });
   await reveal(rows);
 }
 
 async function reveal(rows) {
   const n = rows.length;
   app.innerHTML = head('') + `<ol class="rv-list" id="list">${rows.map(p => `<li class="rv-row${p.plek === 1 ? ' p1' : (p.plek === 2 ? ' p2' : (p.plek === 3 ? ' p3' : ''))}">
-    <span class="pl">${p.plek}</span><span class="em">${emoji(p.dier)}</span><span class="nm">${esc(p.dier)}</span><span class="sc">${p.score}<small>punten</small></span></li>`).join('')}</ol>
+    <span class="pl">${p.plek}</span><span class="em">${emoji(p.dier)}</span><span class="nm">${esc(p.dier)}</span><span class="sc">${p.score}<small>punten${p.toonTijd ? ' · ' + fmtTijd(p.tijd_ms) : ''}</small></span></li>`).join('')}</ol>
     <div class="rv-hint">Spatie of klik: sneller</div>`;
   const list = $('#list');
   const fit = () => {
@@ -137,6 +143,7 @@ async function reveal(rows) {
     else beep(400 + (n - pos) * 10, 0.15, 'sine', 0.1);
     if (pos > 1) await wait(pos > 3 ? 150 : 1200);
   }
+  try { await rpc('teacher_set_board', { p_password: pw, p_class_id: klasId, p_visible: true }); } catch (e) {}
   const hint = $('.rv-hint');
   if (hint) hint.innerHTML = '<button class="btn ghost" id="again">Opnieuw</button> <button class="btn ghost" id="close">Sluiten</button>';
   $('#again').onclick = viewStart;
