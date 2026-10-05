@@ -57,7 +57,10 @@ const ERR = {
   speler_niet_gevonden: 'Dit dier bestaat niet meer.',
   geen_pincode: 'Dit dier heeft geen pincode om te resetten.',
   te_laat: 'Reset niet mogelijk. De laatste speeldatum ligt meer dan zeven dagen terug.',
-  wachtwoord_te_kort: 'Een wachtwoord bestaat uit minimaal 8 tekens.'
+  wachtwoord_te_kort: 'Een wachtwoord bestaat uit minimaal 8 tekens.',
+  vak_ongeldig: 'Kies een vak uit de lijst.',
+  ronde_ongeldig: 'Deze ronde bestaat niet.',
+  geen_vragen: 'Er zijn nog geen vragen beschikbaar.'
 };
 function errText(code) { return ERR[code] || 'Er ging iets mis (' + code + ').'; }
 
@@ -83,3 +86,27 @@ const ANIMALS = {
   Slak: '🐌', Krab: '🦀', Haai: '🦈', Tijger: '🐯', Aap: '🐵', Muis: '🐭', Kat: '🐱', Hond: '🐶', Eend: '🦆', Koe: '🐮'
 };
 function emoji(d) { return ANIMALS[d] || '🐾'; }
+
+function setVak(v, persist) {
+  const vak = v === 'politiek' ? 'politiek' : 'woii';
+  document.body.dataset.vak = vak;
+  if (persist !== false) store.set('oefen_vak', vak);
+  return vak;
+}
+
+/* Hoefijzer van Tweede Kamerzetels, puur decoratie */
+function hemicycle() {
+  const arcs = [[22, 9], [34, 14], [46, 19]];
+  const cx = 70, cy = 62;
+  let dots = '', k = 0;
+  arcs.forEach(([r, n]) => {
+    for (let i = 0; i < n; i++) {
+      const a = Math.PI - (Math.PI * i) / (n - 1);
+      const x = (cx + r * Math.cos(a)).toFixed(1), y = (cy - r * Math.sin(a)).toFixed(1);
+      const mag = (k % 7 === 3);
+      dots += '<circle cx="' + x + '" cy="' + y + '" r="2.8" fill="' + (mag ? '#ff00e6' : '#ffffff') + '" fill-opacity="' + (mag ? '1' : '.85') + '"/>';
+      k++;
+    }
+  });
+  return '<svg class="hemi" viewBox="0 0 140 66" aria-hidden="true" focusable="false">' + dots + '</svg>';
+}

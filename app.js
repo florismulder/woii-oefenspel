@@ -6,7 +6,20 @@ const CHAPTERS = [
   'Na de oorlog',
   'Finale: alle hoofdstukken door elkaar'
 ];
-const LIMIT = 25;
+const RONDES = [
+  { t: 'Ronde 1: Stelsel en Tweede Kamer', s: 'Hoofdstuk 1 en 2' },
+  { t: 'Ronde 2: Verkiezingen en Eerste Kamer', s: 'Hoofdstuk 3 en 4' },
+  { t: 'Ronde 3: Kabinet en wet', s: 'Hoofdstuk 5 en 6' },
+  { t: 'Finale: alle stof door elkaar', s: 'Met formatie en coalitie. 20 seconden per vraag en dubbele punten.' }
+];
+const GAMES = [
+  { id: 'woii', icon: '🕰️', titel: 'Tweede Wereldoorlog', vak: 'Geschiedenis', tekst: 'Oefen de stof van de reader per hoofdstuk, met een finale.' },
+  { id: 'politiek', icon: '🏛️', titel: 'Kamer en Kabinet', vak: 'Politiek', tekst: 'Wekelijkse oefenrondes en een finale vlak voor de toets.' }
+];
+let vak = store.get('oefen_vak') === 'politiek' ? 'politiek' : 'woii';
+let inMenu = false;
+setVak(vak, false);
+let curStage = null;
 let token = store.get('woii_token');
 let st = null;
 let raf = null;
@@ -23,12 +36,37 @@ function render(html) {
   window.scrollTo(0, 0);
 }
 function header() {
+  if (inMenu) {
+    return '<header class="top"><div class="brand">Oefenspellen</div><div class="sub">Mediacollege Amsterdam</div></header>';
+  }
+  if (vak === 'politiek') {
+    return '<header class="top">' + hemicycle() + '<div class="brand">Kamer en Kabinet</div><div class="sub">Oefenrondes bij de reader</div></header>';
+  }
   return '<header class="top"><div class="brand">Tweede Wereldoorlog</div><div class="sub">Oefenspel bij de reader</div></header>';
 }
 function logout() {
   token = null;
   store.del('woii_token');
-  viewLogin();
+  store.del('oefen_vak');
+  viewMenu();
+}
+
+/* ---------- Menu ---------- */
+function viewMenu() {
+  inMenu = true;
+  setVak('woii', false);
+  const tiles = GAMES.map(g => `<button class="game" data-g="${g.id}" type="button">
+    <span class="gi" aria-hidden="true">${g.icon}</span>
+    <span class="gt"><b>${esc(g.titel)}</b><span class="gv">${esc(g.vak)}</span><span class="gx">${esc(g.tekst)}</span></span></button>`).join('');
+  render(header() + `<main><h1>Kies je spel</h1>
+    <p>Kies het spel waarvoor je een code van je docent hebt gekregen.</p>
+    <div class="games">${tiles}
+    <div class="game soon" aria-hidden="true"><span class="gi">✨</span><span class="gt"><b>Binnenkort meer</b><span class="gx">Er komen later meer oefenspellen bij.</span></span></div></div></main>`);
+  app.querySelectorAll('.game[data-g]').forEach(b => b.onclick = () => {
+    inMenu = false;
+    vak = setVak(b.dataset.g, false);
+    viewLogin();
+  });
 }
 
 /* ---------- Inloggen ---------- */
@@ -42,7 +80,9 @@ function viewLogin(msg) {
       <button class="btn" type="submit">Verder</button>
     </form>
     <p class="msg" id="msg" role="alert">${esc(msg || '')}</p>
+    <button class="btn ghost small" id="menu" type="button">Kies een ander spel</button>
   </main>`);
+  $('#menu').onclick = viewMenu;
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const code = $('#code').value.trim();
@@ -51,6 +91,12 @@ function viewLogin(msg) {
     const r = await rpc('player_check_code', { p_code: code });
     b.disabled = false;
     if (r.error) { $('#msg').textContent = errText(r.error); return; }
+    if (r.vak !== vak) {
+      const g = GAMES.find(x => x.id === r.vak);
+      $('#msg').textContent = 'Deze code hoort bij ' + (g ? g.titel : 'een ander spel') + '. Kies dat spel in het menu.';
+      return;
+    }
+    setVak(r.vak);
     if (r.status === 'nieuw') viewClaim(code, r.dier);
     else viewPin(code, r.dier);
   };
@@ -123,6 +169,7 @@ async function loadHome() {
     viewLogin(errText(st.error));
     return;
   }
+  vak = setVak(st.vak);
   viewHome();
 }
 
@@ -143,7 +190,40 @@ function meBox() {
     <div class="stats"><b>${st.score}</b> punten · plek <b>${st.plek}</b></div></div></div>`;
 }
 
+function viewHomePolitiek() {
+  const items = st.rondes.map((r, i) => {
+    const n = r.ronde, info = RONDES[i];
+    let cls = 'dicht', status = 'Nog dicht. Je docent zet deze ronde open.', btn = '', extra = '';
+    if (r.totaal === 0) {
+      status = r.open ? 'Komt binnenkort.' : 'Nog dicht. Je docent zet deze ronde open.';
+    } else if (r.open && r.klaar >= r.totaal) {
+      cls = 'klaar'; status = 'Afgerond';
+    } else if (r.open) {
+      cls = 'actief'; status = 'Open';
+      extra = `<div class="bar" aria-hidden="true"><i style="width:${Math.round(r.klaar / r.totaal * 100)}%"></i></div>
+        <div class="s">${r.klaar} van ${r.totaal} vragen afgerond</div>`;
+      if (!st.afgelopen) {
+        const label = (st.heeft_vraag && curStage === n) ? 'Ga verder met je vraag' : (r.klaar > 0 ? 'Ga verder' : (n === 4 ? 'Start de finale' : 'Start ronde ' + n));
+        btn = `<button class="btn go" data-stage="${n}">${label}</button>`;
+      }
+    } else if (!r.open && r.klaar >= r.totaal && r.totaal > 0) {
+      cls = 'klaar'; status = 'Afgerond';
+    }
+    return `<li class="${cls}${n === 4 ? ' finale' : ''}"><div class="t">${esc(info.t)}</div><div class="s">${esc(info.s)}</div><div class="s"><b>${esc(status)}</b></div>${extra}${btn}</li>`;
+  }).join('');
+  let banner = '';
+  if (st.afgelopen) banner = '<div class="banner">De competitie is afgelopen. Bekijk de eindstand bij Ranglijst.</div>';
+  else if (st.heeft_vraag) banner = '<div class="banner">Je hebt nog een vraag open staan. Ga verder in de ronde waar je mee bezig was.</div>';
+  render(header() + nav('spelen') + meBox() + banner + `<ul class="chapters">${items}</ul>` +
+    `<p class="small-note" style="margin-top:16px">Je hebt 30 seconden per vraag, in de finale 20 seconden. Goed in één keer geeft 10 punten. Daarna 5, 3 en 2 punten. In de finale telt alles dubbel. Een foute vraag komt later terug, soms in een andere vorm. De competitie eindigt op ${esc(fmtDay(st.eind_datum))}. Speel je zeven dagen niet, dan vervalt je score.</p>
+     <button class="btn ghost small" id="out" type="button">Uitloggen</button>`);
+  bindNav();
+  app.querySelectorAll('.go').forEach(b => b.onclick = () => play(parseInt(b.dataset.stage, 10)));
+  $('#out').onclick = logout;
+}
+
 function viewHome() {
+  if (st.vak === 'politiek') return viewHomePolitiek();
   const h = st.hoofdstuk;
   const items = CHAPTERS.map((t, i) => {
     const n = i + 1;
@@ -169,14 +249,24 @@ function viewHome() {
     `<p class="small-note" style="margin-top:16px">Je hebt ${LIMIT} seconden per vraag. Goed in één keer geeft 10 punten. Daarna 5, 3, 2 en 1 punt. De competitie eindigt op ${esc(fmtDay(st.eind_datum))}. Speel je zeven dagen niet, dan vervalt je score.</p>
      <button class="btn ghost small" id="out" type="button">Uitloggen</button>`);
   bindNav();
-  const go = $('#go'); if (go) go.onclick = play;
+  const go = $('#go'); if (go) go.onclick = () => play();
   $('#out').onclick = logout;
 }
 
 /* ---------- Spelen ---------- */
-async function play() {
+async function play(stage) {
+  if (typeof stage === 'number') curStage = stage;
   render(header() + '<p>Vraag ophalen...</p>');
-  const n = await rpc('player_next', { p_token: token });
+  const args = { p_token: token };
+  if (vak === 'politiek') {
+    const res = await rpc('player_next', { p_token: token, p_stage: typeof curStage === 'number' ? curStage : null });
+    return handleNext(res);
+  }
+  const n = await rpc('player_next', args);
+  return handleNext(n);
+}
+
+function handleNext(n) {
   if (n.error) {
     if (n.error === 'sessie_verlopen') { token = null; store.del('woii_token'); viewLogin(errText(n.error)); }
     else viewMessage(errText(n.error));
@@ -185,7 +275,11 @@ async function play() {
   if (n.status === 'vraag') return showQuestion(n);
   if (n.status === 'uitslag') return showResult(n.uitslag, true);
   if (n.status === 'binnenkort') {
-    viewMessage('Hoofdstuk ' + n.hoofdstuk + ' wordt binnenkort toegevoegd. Je docent laat het weten zodra je verder kunt.');
+    viewMessage((vak === 'politiek' ? 'Ronde ' + n.ronde : 'Hoofdstuk ' + n.hoofdstuk) + ' wordt binnenkort toegevoegd. Je docent laat het weten zodra je verder kunt.');
+    return;
+  }
+  if (n.status === 'dicht') {
+    viewMessage('Ronde ' + n.ronde + ' is nog niet open. Je docent zet hem open.');
     return;
   }
   loadHome();
@@ -199,9 +293,11 @@ function viewMessage(text) {
 function showQuestion(n) {
   const opts = n.opties.map((o, i) =>
     `<button class="opt" data-id="${o.id}"><b>${'ABCDE'[i]}.</b> ${esc(o.tekst)}</button>`).join('');
+  const LIMIT = n.limiet || 30;
+  const unit = (n.vak === 'politiek') ? (n.ronde === 4 ? 'Finale' : 'Ronde ' + n.ronde) : (n.hoofdstuk <= 4 ? 'Hoofdstuk ' + n.hoofdstuk : 'Finale');
   render(header() + `
-    <div class="qmeta"><span>${n.hoofdstuk <= 4 ? 'Hoofdstuk ' + n.hoofdstuk : 'Finale'} · ${n.klaar} van ${n.totaal} afgerond</span>
-    <span>Poging ${n.poging} van 5 · ${n.punten} ${n.punten === 1 ? 'punt' : 'punten'}</span></div>
+    <div class="qmeta"><span>${unit} · ${n.klaar} van ${n.totaal} afgerond</span>
+    <span>Poging ${n.poging} van ${n.max_pogingen || 5} · ${n.punten} ${n.punten === 1 ? 'punt' : 'punten'}</span></div>
     <div class="timer" id="timer" role="timer" aria-label="Resterende tijd"><i id="tbar"></i></div>
     <div class="qmeta"><span></span><span id="tnum">${Math.ceil(n.resterend)} s</span></div>
     <div class="qtext" id="q">${esc(n.vraag)}</div>
@@ -255,16 +351,23 @@ function showResult(u, resumed) {
         <b>Bestudeer de paragraaf "${esc(u.onthul.paragraaf)}" op pagina ${esc(pag)} van de reader goed.</b></div>`;
     }
   }
+  const pol = u.vak === 'politiek';
   if (u.hoofdstuk_klaar) {
-    body += u.alles_klaar
-      ? '<div class="banner">Je hebt de finale afgerond. Gefeliciteerd!</div>'
-      : `<div class="banner">Hoofdstuk ${u.hoofdstuk} is afgerond.</div>`;
+    if (pol) {
+      body += u.ronde === 4
+        ? '<div class="banner">Je hebt de finale afgerond. Gefeliciteerd!</div>'
+        : `<div class="banner">Ronde ${u.ronde} is afgerond.</div>`;
+    } else {
+      body += u.alles_klaar
+        ? '<div class="banner">Je hebt de finale afgerond. Gefeliciteerd!</div>'
+        : `<div class="banner">Hoofdstuk ${u.hoofdstuk} is afgerond.</div>`;
+    }
   }
   render(header() + `<div class="result ${cls}" role="status">${body}
     <p class="small-note">Totaal: <b>${u.score}</b> punten</p></div>
-    <div class="row"><div><button class="btn block" id="next">${u.hoofdstuk_klaar ? 'Verder' : 'Volgende vraag'}</button></div>
+    <div class="row"><div><button class="btn block" id="next">${(pol && u.hoofdstuk_klaar) ? 'Naar de rondes' : (u.hoofdstuk_klaar ? 'Verder' : 'Volgende vraag')}</button></div>
     <div><button class="btn ghost block" id="stop">Stoppen</button></div></div>`);
-  $('#next').onclick = play;
+  $('#next').onclick = (pol && u.hoofdstuk_klaar) ? loadHome : () => play();
   $('#stop').onclick = loadHome;
   $('#next').focus();
 }
@@ -297,4 +400,4 @@ async function drawLeaderboard(quiet) {
 }
 
 /* ---------- Start ---------- */
-if (token) loadHome(); else viewLogin();
+if (token) loadHome(); else viewMenu();

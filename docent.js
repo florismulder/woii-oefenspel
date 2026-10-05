@@ -5,7 +5,7 @@ try { pw = sessionStorage.getItem('woii_docent'); } catch (e) {}
 
 function render(html) { app.innerHTML = html; window.scrollTo(0, 0); }
 function header(extra) {
-  return `<header class="top"><div class="brand">Docentenpagina</div><div class="sub">Oefenspel Tweede Wereldoorlog</div></header>${extra || ''}`;
+  return `<header class="top"><div class="brand">Docentenpagina</div><div class="sub">Oefenspellen Tweede Wereldoorlog en Kamer en Kabinet</div></header>${extra || ''}`;
 }
 function today() {
   const d = new Date();
@@ -15,6 +15,8 @@ function addDays(iso, n) {
   const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
+const VAK = { woii: 'Tweede Wereldoorlog', politiek: 'Kamer en Kabinet' };
+const RONDE_NAMEN = ['Ronde 1: Stelsel en Tweede Kamer', 'Ronde 2: Verkiezingen en Eerste Kamer', 'Ronde 3: Kabinet en wet', 'Finale'];
 const STATUS = { actief: 'Actief', nog_niet_gestart: 'Nog niet gestart', pincode_gereset: 'Pincode gereset' };
 
 function logout() {
@@ -56,16 +58,17 @@ async function loadClasses() {
 function viewClasses(r) {
   const t = today();
   const rows = r.klassen.map(k => `<tr>
-    <td><b>${esc(k.naam)}</b></td><td>${k.actief} van ${k.aantal} gestart</td>
+    <td><b>${esc(k.naam)}</b></td><td><span class="pill ${k.vak === 'politiek' ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></td><td>${k.actief} van ${k.aantal} gestart</td>
     <td>${esc(fmtDay(k.eind_datum))}${k.afgelopen ? ' (afgelopen)' : ''}</td>
     <td><button class="btn small" data-open="${esc(k.id)}">Openen</button></td></tr>`).join('');
   render(header() + `
     <div class="row" style="margin-bottom:12px"><div><button class="btn ghost small" id="out">Uitloggen</button></div></div>
     <h2>Mijn klassen</h2>
-    ${r.klassen.length ? `<div class="table-scroll"><table class="docent"><thead><tr><th>Klas</th><th>Studenten</th><th>Einddatum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p>Nog geen klassen. Maak hieronder je eerste klas aan.</p>'}
+    ${r.klassen.length ? `<div class="table-scroll"><table class="docent"><thead><tr><th>Klas</th><th>Vak</th><th>Studenten</th><th>Einddatum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p>Nog geen klassen. Maak hieronder je eerste klas aan.</p>'}
     <h2>Nieuwe klas</h2>
     <form class="card" id="nf">
       <div class="row">
+        <div><label for="vk">Vak</label><select id="vk"><option value="politiek">Kamer en Kabinet</option><option value="woii">Tweede Wereldoorlog</option></select></div>
         <div><label for="nm">Klasnaam</label><input id="nm" maxlength="30" placeholder="bijvoorbeeld MR26"></div>
         <div><label for="sz">Aantal studenten</label><input id="sz" type="number" min="1" max="40" value="24"></div>
         <div><label for="ed">Einddatum competitie</label><input id="ed" type="date" min="${t}" max="${addDays(t, 45)}" value="${addDays(t, 45)}"></div>
@@ -83,7 +86,7 @@ function viewClasses(r) {
     e.preventDefault();
     const b = $('#nf .btn'); b.disabled = true;
     const res = await rpc('teacher_create_class', {
-      p_password: pw, p_name: $('#nm').value, p_size: parseInt($('#sz').value, 10), p_end_date: $('#ed').value || null
+      p_password: pw, p_name: $('#nm').value, p_size: parseInt($('#sz').value, 10), p_end_date: $('#ed').value || null, p_vak: $('#vk').value
     });
     b.disabled = false;
     if (res.error) { $('#msg').textContent = errText(res.error); return; }
@@ -104,6 +107,7 @@ function viewCodes(res) {
   const rows = res.codes.map(c => `<tr><td>${emoji(c.dier)} ${esc(c.dier)}</td><td><code class="k">${esc(c.code)}</code></td></tr>`).join('');
   render(header() + `
     <h2>Klas ${esc(res.naam)} is aangemaakt</h2>
+    ${res.vak === 'politiek' ? '<p class="banner">Alle rondes staan nog dicht. Zet ze open bij de klas, zodra je ze wilt gebruiken.</p>' : ''}
     <p>Deel elke code uit aan één student. Jij houdt zelf bij welke student bij welk dier hoort. De competitie eindigt op ${esc(fmtDay(res.eind_datum))}.</p>
     <div class="row"><div><button class="btn" id="copy">Kopieer alle codes</button></div>
     <div><button class="btn ghost" id="print">Print</button></div>
@@ -128,11 +132,17 @@ async function openClass(id) {
     viewLogin(errText(r.error)); return;
   }
   const k = r.klas;
+  const pol = k.vak === 'politiek';
+  const vpr = k.vragen_per_ronde || {};
+  const voortg = p => [1, 2, 3, 4].map(n => {
+    const tot = vpr[String(n)] || 0;
+    return tot ? ((p.voortgang && p.voortgang[String(n)]) || 0) + '/' + tot : '-';
+  }).join(' · ');
   const rows = r.spelers.map(p => `<tr>
     <td>${emoji(p.dier)} <b>${esc(p.dier)}</b></td>
     <td><code class="k">${esc(p.code)}</code></td>
     <td><span class="pill ${esc(p.status)}">${esc(STATUS[p.status] || p.status)}</span></td>
-    <td>${p.status === 'actief' ? (p.hoofdstuk > 5 ? 'klaar' : (p.hoofdstuk === 5 ? 'finale' : p.hoofdstuk)) : ''}</td>
+    <td>${pol ? esc(voortg(p)) : (p.status === 'actief' ? (p.hoofdstuk > 5 ? 'klaar' : (p.hoofdstuk === 5 ? 'finale' : p.hoofdstuk)) : '')}</td>
     <td><b>${p.score}</b></td>
     <td>${p.laatst_gespeeld ? esc(fmtDate(p.laatst_gespeeld)) : ''}</td>
     <td>${p.vervalt_op && p.status === 'actief' ? esc(fmtDate(p.vervalt_op)) : ''}</td>
@@ -143,9 +153,17 @@ async function openClass(id) {
       <div><button class="btn ghost small" id="back">Alle klassen</button></div>
       <div><button class="btn ghost small" id="refresh">Vernieuwen</button></div>
     </div>
-    <h2>Klas ${esc(k.naam)}</h2>
+    <h2>Klas ${esc(k.naam)} <span class="pill ${pol ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></h2>
+    ${pol ? `<h2>Rondes openzetten</h2>
+    <form class="card" id="rf"><p>Zet een ronde open als je wilt dat studenten hem kunnen spelen. Een ronde die je sluit blijft bewaard met alle punten.</p>
+    <div class="stage-box">${RONDE_NAMEN.map((nm, i) => {
+      const n = i + 1, tot = vpr[String(n)] || 0;
+      return `<label><input type="checkbox" name="st" value="${n}" ${(k.open_stages || []).includes(n) ? 'checked' : ''}> ${esc(nm)} ${tot ? '(' + tot + ' vragen)' : '(nog geen vragen)'}</label>`;
+    }).join('')}</div>
+    <button class="btn" type="submit">Opslaan</button> <button class="btn ghost" type="button" id="allopen">Alles open</button>
+    <p class="msg" id="rmsg" role="alert"></p></form>` : ''}
     <p>Einddatum: <b>${esc(fmtDay(k.eind_datum))}</b>${k.afgelopen ? ' (afgelopen)' : ''}. De klas wordt automatisch gewist op ${esc(fmtDate(k.wordt_gewist_op))}.</p>
-    <div class="table-scroll"><table class="docent"><thead><tr><th>Dier</th><th>Code</th><th>Status</th><th>Hoofdstuk</th><th>Score</th><th>Laatst gespeeld</th><th>Score vervalt</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="table-scroll"><table class="docent"><thead><tr><th>Dier</th><th>Code</th><th>Status</th><th>${pol ? 'Ronde 1 · 2 · 3 · finale' : 'Hoofdstuk'}</th><th>Score</th><th>Laatst gespeeld</th><th>Score vervalt</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="small-note">Reset van een pincode kan alleen binnen zeven dagen na het laatste spel. Daarna vervalt de score en komt het dier weer vrij voor een nieuwe start.</p>
     <p class="msg" id="msg" role="alert"></p>
     <h2>Einddatum wijzigen</h2>
@@ -154,6 +172,18 @@ async function openClass(id) {
     <h2>Klas verwijderen</h2>
     <button class="btn danger" id="del">Verwijder deze klas en alle scores</button>`);
   $('#back').onclick = loadClasses;
+  if (pol) {
+    const saveStages = async stages => {
+      const res = await rpc('teacher_set_open_stages', { p_password: pw, p_class_id: id, p_stages: stages });
+      if (res.error) { $('#rmsg').textContent = errText(res.error); return; }
+      openClass(id);
+    };
+    $('#rf').onsubmit = e => {
+      e.preventDefault();
+      saveStages(Array.from(app.querySelectorAll('input[name=st]:checked')).map(x => parseInt(x.value, 10)));
+    };
+    $('#allopen').onclick = () => saveStages([1, 2, 3, 4]);
+  }
   $('#refresh').onclick = () => openClass(id);
   app.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
     if (!confirm('Pincode van de ' + b.dataset.dier + ' resetten? De score blijft staan. De student maakt een nieuwe pincode met dezelfde code.')) return;
