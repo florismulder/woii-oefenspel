@@ -20,7 +20,8 @@ let vak = store.get('oefen_vak') === 'politiek' ? 'politiek' : 'woii';
 let inMenu = false;
 setVak(vak, false);
 let curStage = null;
-let token = store.get('woii_token');
+const tokKey = v => 'oefen_tok_' + v;
+let token = null;
 let st = null;
 let raf = null;
 let lbTimer = null;
@@ -46,8 +47,7 @@ function header() {
 }
 function logout() {
   token = null;
-  store.del('woii_token');
-  store.del('oefen_vak');
+  store.del(tokKey(vak));
   viewMenu();
 }
 
@@ -57,15 +57,16 @@ function viewMenu() {
   setVak('woii', false);
   const tiles = GAMES.map(g => `<button class="game" data-g="${g.id}" type="button">
     <span class="gi" aria-hidden="true">${g.icon}</span>
-    <span class="gt"><b>${esc(g.titel)}</b><span class="gv">${esc(g.vak)}</span><span class="gx">${esc(g.tekst)}</span></span></button>`).join('');
+    <span class="gt"><b>${esc(g.titel)}</b><span class="gv">${esc(g.vak)}${store.get(tokKey(g.id)) ? ' · verder spelen' : ''}</span><span class="gx">${esc(g.tekst)}</span></span></button>`).join('');
   render(header() + `<main><h1>Kies je spel</h1>
-    <p>Kies het spel waarvoor je een code van je docent hebt gekregen.</p>
+    <p>Kies het spel dat je wilt spelen. Heb je al gespeeld, dan ga je daar verder waar je was.</p>
     <div class="games">${tiles}
     <div class="game soon" aria-hidden="true"><span class="gi">✨</span><span class="gt"><b>Binnenkort meer</b><span class="gx">Er komen later meer oefenspellen bij.</span></span></div></div></main>`);
   app.querySelectorAll('.game[data-g]').forEach(b => b.onclick = () => {
     inMenu = false;
     vak = setVak(b.dataset.g, false);
-    viewLogin();
+    const t = store.get(tokKey(vak));
+    if (t) { token = t; loadHome(); } else { token = null; viewLogin(); }
   });
 }
 
@@ -131,7 +132,7 @@ function viewClaim(code, dier) {
     const r = await rpc('player_claim', { p_code: code, p_pin: p1 });
     b.disabled = false;
     if (r.error) { $('#msg').textContent = errText(r.error); return; }
-    token = r.token; store.set('woii_token', token);
+    token = r.token; store.set(tokKey(vak), token);
     loadHome();
   };
   $('#p1').focus();
@@ -154,7 +155,7 @@ function viewPin(code, dier) {
     const r = await rpc('player_login', { p_code: code, p_pin: $('#p1').value });
     b.disabled = false;
     if (r.error) { $('#msg').textContent = errText(r.error); return; }
-    token = r.token; store.set('woii_token', token);
+    token = r.token; store.set(tokKey(vak), token);
     loadHome();
   };
   $('#p1').focus();
@@ -165,7 +166,7 @@ async function loadHome() {
   render(header() + '<p>Laden...</p>');
   st = await rpc('player_state', { p_token: token });
   if (st.error) {
-    if (st.error === 'sessie_verlopen') { token = null; store.del('woii_token'); }
+    if (st.error === 'sessie_verlopen') { token = null; store.del(tokKey(vak)); }
     viewLogin(errText(st.error));
     return;
   }
@@ -177,11 +178,12 @@ function nav(active) {
   return `<nav class="tabs" aria-label="Menu">
     <button data-t="spelen" ${active === 'spelen' ? 'aria-current="true"' : ''}>Spelen</button>
     <button data-t="ranglijst" ${active === 'ranglijst' ? 'aria-current="true"' : ''}>Ranglijst</button>
+    <button data-t="menu">Ander spel</button>
   </nav>`;
 }
 function bindNav() {
   app.querySelectorAll('nav.tabs button').forEach(b => {
-    b.onclick = () => { if (b.dataset.t === 'spelen') loadHome(); else viewLeaderboard(); };
+    b.onclick = () => { if (b.dataset.t === 'spelen') loadHome(); else if (b.dataset.t === 'menu') viewMenu(); else viewLeaderboard(); };
   });
 }
 function meBox() {
@@ -268,7 +270,7 @@ async function play(stage) {
 
 function handleNext(n) {
   if (n.error) {
-    if (n.error === 'sessie_verlopen') { token = null; store.del('woii_token'); viewLogin(errText(n.error)); }
+    if (n.error === 'sessie_verlopen') { token = null; store.del(tokKey(vak)); viewLogin(errText(n.error)); }
     else viewMessage(errText(n.error));
     return;
   }
@@ -311,7 +313,7 @@ function showQuestion(n) {
     clearTimers();
     buttons.forEach(b => b.disabled = true);
     const u = await rpc('player_answer', { p_token: token, p_option: opt });
-    if (u.error === 'sessie_verlopen') { token = null; store.del('woii_token'); viewLogin(errText(u.error)); return; }
+    if (u.error === 'sessie_verlopen') { token = null; store.del(tokKey(vak)); viewLogin(errText(u.error)); return; }
     if (u.error === 'geen_vraag') { play(); return; }
     if (u.error) { viewMessage(errText(u.error)); return; }
     showResult(u);
@@ -382,7 +384,7 @@ async function viewLeaderboard() {
 async function drawLeaderboard(quiet) {
   const r = await rpc('player_leaderboard', { p_token: token });
   if (r.error) {
-    if (r.error === 'sessie_verlopen') { token = null; store.del('woii_token'); viewLogin(errText(r.error)); return; }
+    if (r.error === 'sessie_verlopen') { token = null; store.del(tokKey(vak)); viewLogin(errText(r.error)); return; }
     if (!quiet) viewMessage(errText(r.error));
     return;
   }
@@ -409,4 +411,15 @@ async function drawLeaderboard(quiet) {
 }
 
 /* ---------- Start ---------- */
-if (token) loadHome(); else viewMenu();
+(async function start() {
+  // oude sessie (zonder vak) overzetten naar de nieuwe opslag per spel
+  const old = store.get('woii_token');
+  if (old) {
+    try {
+      const s0 = await rpc('player_state', { p_token: old });
+      if (s0 && s0.vak) store.set(tokKey(s0.vak), old);
+    } catch (e) {}
+    store.del('woii_token');
+  }
+  viewMenu();
+})();
