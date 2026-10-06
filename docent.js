@@ -21,6 +21,42 @@ function addDays(iso, n) {
 const VAK = { woii: 'Tweede Wereldoorlog', politiek: 'Kamer en Kabinet' };
 const RONDE_NAMEN = ['Ronde 1: Stelsel en Tweede Kamer', 'Ronde 2: Verkiezingen en Eerste Kamer', 'Ronde 3: Kabinet en wet', 'Finale'];
 function fmtTijd(ms) { return (Math.round((ms || 0) / 100) / 10).toString().replace('.', ',') + ' s'; }
+
+/* ---------- Excel-download ---------- */
+const STATUS_X = { actief: 'Actief', nog_niet_gestart: 'Nog niet gestart', pincode_gereset: 'Pincode gereset' };
+function klasSheet(r) {
+  const k = r.klas, pol = k.vak === 'politiek', vpr = k.vragen_per_ronde || {};
+  const kop = ['Naam student', 'Dier', 'Code', 'Status', 'Score', 'Tijd (s)', pol ? 'Voortgang ronde 1 | 2 | 3 | finale' : 'Hoofdstuk'];
+  const rows = [kop].concat(r.spelers.slice().sort((a, b) => a.dier.localeCompare(b.dier, 'nl')).map(p => [
+    '', p.dier, p.code, STATUS_X[p.status] || p.status, p.score, Math.round((p.tijd_ms || 0) / 100) / 10,
+    pol ? [1, 2, 3, 4].map(n => { const t = vpr[String(n)] || 0; return t ? ((p.voortgang && p.voortgang[String(n)]) || 0) + '/' + t : '-'; }).join(' | ')
+        : (p.status === 'actief' ? (p.hoofdstuk > 5 ? 'klaar' : (p.hoofdstuk === 5 ? 'finale' : 'hoofdstuk ' + p.hoofdstuk)) : '')
+  ]));
+  return { name: k.naam + ' - ' + (k.vak === 'politiek' ? 'Politiek' : 'Geschiedenis'), rows, widths: [26, 14, 16, 18, 8, 9, 32] };
+}
+function saveBlob(blob, naam) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = naam;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function bestandsnaam(deel) { return 'oefenenenleren_' + String(deel).replace(/[^A-Za-z0-9_-]+/g, '_') + '_' + today() + '.xlsx'; }
+async function downloadKlas(id) {
+  const r = await rpc('teacher_overview', { p_password: pw, p_class_id: id });
+  if (r.error) { alert(errText(r.error)); return; }
+  saveBlob(XLSX_MIN.build([klasSheet(r)]), bestandsnaam(r.klas.naam + '_' + (r.klas.vak === 'politiek' ? 'politiek' : 'geschiedenis')));
+}
+async function downloadAlle(klassen) {
+  const sheets = [];
+  for (const k of klassen) {
+    const r = await rpc('teacher_overview', { p_password: pw, p_class_id: k.id });
+    if (r.error) { alert(errText(r.error)); return; }
+    sheets.push(klasSheet(r));
+  }
+  if (!sheets.length) return;
+  saveBlob(XLSX_MIN.build(sheets), bestandsnaam('alle_klassen'));
+}
+
 const STATUS = { actief: 'Actief', nog_niet_gestart: 'Nog niet gestart', pincode_gereset: 'Pincode gereset' };
 
 function logout() {
@@ -64,11 +100,12 @@ function viewClasses(r) {
   const rows = r.klassen.map(k => `<tr>
     <td><b>${esc(k.naam)}</b></td><td><span class="pill ${k.vak === 'politiek' ? 'pol' : ''}">${esc(VAK[k.vak] || k.vak)}</span></td><td>${k.actief} van ${k.aantal} gestart</td>
     <td>${esc(fmtDay(k.eind_datum))}${k.afgelopen ? ' (afgelopen)' : ''}</td>
-    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button> <button class="btn small ghost" data-reveal="${esc(k.id)}">Onthul stand</button> <button class="btn small danger" data-del="${esc(k.id)}" data-naam="${esc(k.naam)}">Verwijderen</button></td></tr>`).join('');
+    <td><button class="btn small" data-open="${esc(k.id)}">Openen</button> <button class="btn small ghost" data-reveal="${esc(k.id)}">Onthul stand</button> <button class="btn small ghost" data-xl="${esc(k.id)}">Excel</button> <button class="btn small danger" data-del="${esc(k.id)}" data-naam="${esc(k.naam)}">Verwijderen</button></td></tr>`).join('');
   render(header() + `
-    <div class="row" style="margin-bottom:12px"><div><button class="btn ghost small" id="out">Uitloggen</button></div></div>
+    <div class="row" style="margin-bottom:12px"><div><button class="btn ghost small" id="out">Uitloggen</button></div>${r.klassen.length ? '<div><button class="btn small" id="xlall">Download alle klassen als Excel</button></div>' : ''}</div>
     <h2>Mijn klassen</h2>
-    ${r.klassen.length ? `<div class="table-scroll"><table class="docent"><thead><tr><th>Klas</th><th>Vak</th><th>Studenten</th><th>Einddatum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p>Nog geen klassen. Maak hieronder je eerste klas aan.</p>'}
+    ${r.klassen.length ? `<div class="table-scroll"><table class="docent"><thead><tr><th>Klas</th><th>Vak</th><th>Studenten</th><th>Einddatum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="small-note">In het Excel-bestand staat een lege kolom Naam student. Vul die alleen op je eigen computer in. Het systeem slaat geen namen op.</p>` : '<p>Nog geen klassen. Maak hieronder je eerste klas aan.</p>'}
     <h2>Nieuwe klas</h2>
     <form class="card" id="nf">
       <div class="row">
@@ -87,6 +124,8 @@ function viewClasses(r) {
   $('#out').onclick = logout;
   app.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openClass(b.dataset.open));
   app.querySelectorAll('[data-reveal]').forEach(b => b.onclick = () => openReveal(b.dataset.reveal));
+  app.querySelectorAll('[data-xl]').forEach(b => b.onclick = () => downloadKlas(b.dataset.xl));
+  if ($('#xlall')) $('#xlall').onclick = () => downloadAlle(r.klassen);
   app.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm('Klas ' + b.dataset.naam + ' met alle codes en scores definitief verwijderen? Dit kan niet ongedaan worden gemaakt.')) return;
     const res = await rpc('teacher_delete_class', { p_password: pw, p_class_id: b.dataset.del });
@@ -165,6 +204,7 @@ async function openClass(id, flash) {
       <div><button class="btn ghost small" id="back">Alle klassen</button></div>
       <div><button class="btn ghost small" id="refresh">Vernieuwen</button></div>
       <div><button class="btn small" id="reveal">Onthul de tussenstand</button></div>
+      <div><button class="btn small ghost" id="xl">Download Excel met codes</button></div>
       <div><button class="btn small ghost" id="board">${k.bord_zichtbaar ? 'Verberg de ranglijst voor studenten' : 'Toon de ranglijst aan studenten'}</button></div>
     </div>
     <p class="small-note">Studenten zien nu ${k.bord_zichtbaar ? 'de ranglijst en hun plek' : 'alleen hun eigen punten'}. Na afloop van Onthul stand wordt de ranglijst zichtbaar. Bij gelijke punten telt de totale tijd van goede antwoorden.</p>
@@ -204,6 +244,7 @@ async function openClass(id, flash) {
   }
   $('#refresh').onclick = () => openClass(id);
   $('#reveal').onclick = () => openReveal(id);
+  $('#xl').onclick = () => downloadKlas(id);
   $('#board').onclick = async () => {
     const res = await rpc('teacher_set_board', { p_password: pw, p_class_id: id, p_visible: !k.bord_zichtbaar });
     if (res.error) { $('#msg').textContent = errText(res.error); return; }
